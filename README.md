@@ -1,4 +1,4 @@
 # CpuDistanceFields
 Distance field algorithm test.
 
-See [Screenshot](screenshot.png).
+See ![Screenshot](screenshot.png).
