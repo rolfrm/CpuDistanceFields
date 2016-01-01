@@ -1,5 +1,5 @@
-OPT = -g3 -O0
-LIB_SOURCES =  ../iron/mem.c ../iron/process.c ../iron/array.c ../iron/math.c ../iron/time.c ../iron/log.c ../iron/fileio.c ../iron/linmath.c main.c
+OPT = -g0 -O4
+LIB_SOURCES =  ../iron/mem.c ../iron/process.c ../iron/array.c ../iron/math.c ../iron/time.c ../iron/log.c ../iron/linmath.c main.c
 CC = gcc
 TARGET = main
 LIB_OBJECTS =$(LIB_SOURCES:.c=.o)
