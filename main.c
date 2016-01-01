@@ -52,10 +52,10 @@ float distance_function(vec3 p){
 
   vec3 d = vec3_sub(p, sphere_center);
   float v = vec3_len(d) - sphere_radius;//r2;
-  
+  return v;
   vec3 d2 = vec3_sub(p, sphere_center2);
   float v2 = vec3_len(d2) - sphere_radius;
-  return MAX(v, v2);
+  return MAX(v, -v2);
   
   UNUSED(v2);
   /*
@@ -106,7 +106,7 @@ void render_img(float x, float y, float dist, float aov){
 
   if(cam_dist > 4.0)
     return;
-  float r_dist = sinf(aov * 0.5) * cam_dist * 3;
+  float r_dist = sinf(aov * 0.5) * cam_dist;
   //vec3_print(new_point);logd("sd: %f aov:%f cam_dist:%f  ", sd, aov, cam_dist); logd("Rdist: %f\n", r_dist);
   if(r_dist < sd || aov <= 1.0 / 256){
     dist += sd;
@@ -115,7 +115,7 @@ void render_img(float x, float y, float dist, float aov){
   }else{
     float aov_half = aov * 0.5;
     //logd("1 ");
-    dist += sd * 0;
+    dist = dist + sd  - r_dist;
     render_img(x - aov_half, y - aov_half, dist, aov_half);
     //logd("2 ");
     render_img(x + aov_half, y - aov_half, dist, aov_half);
@@ -131,7 +131,92 @@ void render_img(float x, float y, float dist, float aov){
   
 }
 #include <SDL2/SDL.h>
+#include <iron/mem.h>
+typedef struct{
+  float * distance;
+  bool * is_ended;
+  float * last_distance;
+  int * active_children;
+  vec3 * dirvec;
+  int size;
+  int total_size;
+  float cell_fov;
+}img_map;
 
+void render_img2(float * img, int width, int height, float f){
+  UNUSED(height);UNUSED(img);
+  int lods = log2(width) + 1;
+  img_map lod_maps[lods];
+  vec3 horz2 = vec3_normalize(vec3mk(1,0,f));
+  vec3 horz1 = vec3_normalize(vec3mk(-1,0,f));
+  float fov = vec3_len(vec3_sub(horz2, horz1));
+  for(int i = 0; i < lods; i++){
+    lod_maps[i].size = 1 << i;
+    lod_maps[i].total_size = lod_maps[i].size * lod_maps[i].size;
+    lod_maps[i].is_ended = alloc0( lod_maps[i].total_size * sizeof(bool));
+    lod_maps[i].active_children = alloc0( lod_maps[i].total_size * sizeof(int));
+    lod_maps[i].last_distance = alloc0( lod_maps[i].total_size * sizeof(float));
+    lod_maps[i].distance = alloc0( lod_maps[i].total_size * sizeof(float));
+    lod_maps[i].dirvec = alloc0( lod_maps[i].total_size * sizeof(vec3));
+    lod_maps[i].cell_fov = fov / lod_maps[i].size;
+    float s1 = lod_maps[i].size + 1;
+    for(int y = 0; y < lod_maps[i].size; y++){
+      for(int x = 0; x < lod_maps[i].size; x++){
+	float _y = 2.0 * ((y + 1) / s1 - 0.5);
+	float _x = 2.0 * ((x + 1) / s1 - 0.5);
+
+	lod_maps[i].dirvec[y * lod_maps[i].size + x] = vec3_normalize(vec3mk(_x, _y, f));
+      }
+    }    
+    
+    logd("size: %i %i\n", lod_maps[i].size, lod_maps[i].total_size);
+  }
+
+  int handle_node(int lod, int x, int y){
+    img_map * map = lod_maps + lod;
+    img_map * submap = lod_maps + lod + 1;
+    int offset = x + y * map->size;
+    vec3 d = map->dirvec[offset];
+    while(true){
+      
+      float dd = map->distance[offset];
+      vec3 p = vec3_scale(d, dd);
+      float d2 = distance_function(p);
+      if(lod < lods - 1){
+	float r_dist = sinf(map->cell_fov * 0.5) * map->distance[offset] * 1.7;
+	if(d2 < r_dist){
+	  int _x = x * 2;
+	  int _y = y * 2;
+	  int c1 = handle_node(lod + 1,_x,_y);
+	  int c2 = handle_node(lod + 1,_x + 1,_y);
+	  int c3 = handle_node(lod + 1,_x,_y + 1);
+	  int c4 = handle_node(lod + 1,_x + 1, _y + 1);
+	  if(submap->is_ended[c1] && submap->is_ended[c2] &&
+	     submap->is_ended[c3] && submap->is_ended[c4]){
+	    map->is_ended[offset] = true;
+	    return offset;
+	  }
+	}
+      }else{
+	if(d2 < 0.0001){
+	  map->is_ended[offset] = true;
+	  img[offset] = 1;
+	  return offset;
+	}
+      }
+      map->distance[offset] += d2;
+      if( map->distance[offset] > 4.0){
+	map->is_ended[offset] = true;
+	return offset;
+      }
+      
+      //vec3_print(p); vec3_print(d);logd(" : %f \n", d2); 
+      //vec3_print(lod_maps[1].dirvec[0]); vec3_print(lod_maps[1].dirvec[1]);
+    }
+    return offset;
+  }
+  handle_node(0, 0, 0);
+}
 int main(){
   sphere_center = vec3mk(0.0,0.0,1.0);
   sphere_center2 = vec3mk(0.0,-1,1.0);
@@ -146,30 +231,35 @@ int main(){
   window = SDL_CreateWindow("--", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 256,256 ,SDL_WINDOW_SHOWN /*| SDL_WINDOW_OPENGL*/);
   renderer = SDL_CreateRenderer(window, -1, 0);
 
+  //render_img2((float *)img, 256,256, 1);
+  //return 0;
+  
   /* Creating the surface. */
   SDL_Surface *s = SDL_CreateRGBSurface(0, 256, 256, 32, 0, 0, 0, 0);
   
   SDL_Texture *bitmapTex = NULL;
   float t = 0.0;
   for(int i = 0; i < 1000; i++){
+    
     memset(img,0, sizeof(img));
     u64 ts = timestamp();
-    render_img(0, 0, 0, M_PI * 0.25);
+    render_img2((float *) img,256,256,1);
     logd("time: %f ms\n", ((float)(timestamp()- ts)) * 0.001 );
-    t += 0.005;
+    t += 0.01;
     //light.y = sin(t);
     sphere_center.y = cos(t) * 0.5;
     sphere_center.x = sin(t) * 0.5;
     sphere_center2.y = cos(t * 1.1 + 1.2) * 0.5;
   //return 0;
     SDL_FillRect(s, NULL, SDL_MapRGB(s->format, 0, 0, 0));
+    SDL_SetRenderDrawColor( renderer, 128, 100, 64, 255 );
     for(int i = 0; i < 256; i++){
       for(int j = 0; j < 256; j++){
 	SDL_Rect r = {i, j, 1, 1};
 	if(img[i][j] != 0){
 	  int v = 255 * img[i][j];
-	  //SDL_SetRenderDrawColor( renderer, v, v, v, 255 );
-	  SDL_FillRect(s, &r, SDL_MapRGB(s->format, v, v, v));
+	  //
+	  SDL_FillRect(s, &r, SDL_MapRGB(s->format, v/2, v/6 * 2, v / 5));
 	  //SDL_RenderFillRect( renderer, &r );
 	  //SDL_RenderDrawPoint(renderer, i,j);
 	  
