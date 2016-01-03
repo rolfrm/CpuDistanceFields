@@ -25,7 +25,8 @@ void _error(const char * file, int line, const char * msg, ...){
   loge("%s\n", buffer);
   loge("Got error at %s line %i\n", file,line);
   iron_log_stacktrace();
-  raise(SIGSTOP);
+  logd("\n");
+  raise(SIGKILL);
   exit(255);
 }
 inline float sphere_distance(vec3 p, vec3 sp, float r);
@@ -66,7 +67,7 @@ float distance_function(vec3 p){
   vec3 d2 = vec3_sub(p, sphere_center2);
   float v2 = vec3_len(d2) - sphere_radius * 1.4;
 
-  return MAX(v2, v);
+  return MIN(v2, v);
   
   UNUSED(v2);
   /*
@@ -186,6 +187,7 @@ img_map * create_maps(int lods, float f){
 }
 
 void render_img2(img_map * lod_maps, int lods, float * img){
+  float sqrt2 = sqrtf(2.0);
   UNUSED(img);
   for(int i = 0; i < lods; i++){
     memset(lod_maps[i].distance, 0, lod_maps[i].total_size * sizeof(float));
@@ -206,7 +208,7 @@ void render_img2(img_map * lod_maps, int lods, float * img){
       //logd("iterate: %i %i %i: %f %f\n ", lod, x, y, dd,  d2);
       float newdist = dd + d2;
       if(lod < lods - 1){
-	float r_dist = sinf(map->cell_fov * 0.5) * map->distance[offset] * 1.5;
+	float r_dist = map->cell_fov * map->distance[offset] * sqrt2 * 0.25;
 	if(d2 < r_dist){
 	  //logd("going down: %f\n", r_dist);
 	  int s2 = submap->size;
@@ -244,13 +246,14 @@ void render_img2(img_map * lod_maps, int lods, float * img){
 	  }else{
 
 	    int offsets[] = {c1, c2, c3, c4};
-	    float mind = 0.0;
+	    float mind = 0;
 	    for(int i = 0; i < 4; i++){
 	      //logd("Is ended: %i %f\n", submap->is_ended[offsets[i]], submap->distance[offsets[i]]); 
 	      if(submap->is_ended[offsets[i]] == false){
 		mind = MAX(submap->distance[offsets[i]], mind);
 	      }
 	    }
+	    if(mind <= map->distance[offset])
 	    map->distance[offset] = mind;
 	    //ASSERT(false);
 	    continue;
@@ -263,9 +266,9 @@ void render_img2(img_map * lod_maps, int lods, float * img){
 	  //logd("Hit object\n");
 	  return;
 	}
-	/*float r_dist = sinf(map->cell_fov * 0.5) * newdist * 1.7;
+	/*float r_dist = submap->cell_fov * newdist * sqrt2;
 	//logd("??? ! %f %f %f\n", r_dist, d2, newdist);
-	if(r_dist * 16 < d2){ 
+	if(r_dist * 2 < d2){ 
 	  map->distance[offset] = newdist;
 	  //logd("This happens! %f %f %f\n", r_dist, d2, newdist);
 	  return;
@@ -284,9 +287,17 @@ void render_img2(img_map * lod_maps, int lods, float * img){
   }
   handle_node(0, 0, 0);
 }
+
+#include <signal.h>
+
+void handle_sigint(int signum){
+  ERROR("Caught sigint %i\n", signum);
+  //signal(SIGKILL, NULL); // next time just quit.
+}
+
 int main(){
-  sphere_center = vec3mk(0.0,0.2,10.0);
-  sphere_center2 = vec3mk(0.0,-0.2,10.0);
+  sphere_center = vec3mk(0.0,0.2,5.0);
+  sphere_center2 = vec3mk(0.0,-0.2,5.0);
   sphere_center3 = vec3mk(0.2,0.0,0.9);
   light = vec3mk(0.0,0,0);
   int lods = get_lods(512);
@@ -298,8 +309,8 @@ int main(){
   //render_img2((float *)img, 256,256, 1);
   //return 0;
   
-  SDL_Init(SDL_INIT_EVERYTHING);
-  window = SDL_CreateWindow("--", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 512,512 ,SDL_WINDOW_SHOWN /*| SDL_WINDOW_OPENGL*/);
+  SDL_Init(SDL_INIT_VIDEO | SDL_INIT_NOPARACHUTE);
+  window = SDL_CreateWindow("--", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 512,512 ,SDL_WINDOW_SHOWN  /*| SDL_WINDOW_OPENGL*/);
   renderer = SDL_CreateRenderer(window, -1, 0);
 
   /* Creating the surface. */
@@ -307,6 +318,8 @@ int main(){
   
   SDL_Texture *bitmapTex = NULL;
   float t = 0.0;
+  signal(SIGINT, NULL);
+  signal(SIGINT, handle_sigint);
   for(int i = 0; i < 10000; i++){
     
     memset(img,0, sizeof(img));
