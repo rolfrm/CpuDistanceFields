@@ -51,13 +51,15 @@ void blit_img(float _x, float _y, float v){
 
 float distance_function(vec3 p){
   
-  p.z = p.z / 18.0;
+  /*
+    p.z = p.z / 18.0;
   p.z = p.z - floor(p.z);
   p.z = p.z * 18;
+  
 
   p.y = (p.y + 5) / 20.0;
   p.y = p.y - floor(p.y);
-  p.y = p.y * 20 - 5;
+  p.y = p.y * 20 - 5;*/
   
   vec3 d = vec3_sub(p, sphere_center);
   float v = vec3_len(d) - sphere_radius * 1.3;//r2;
@@ -67,7 +69,11 @@ float distance_function(vec3 p){
   vec3 d2 = vec3_sub(p, sphere_center2);
   float v2 = vec3_len(d2) - sphere_radius * 1.4;
 
-  return MIN(v2, v);
+  vec3 d3 = vec3_sub(p, vec3mk(0,0,20));
+  float v3 = vec3_len(d3) - sphere_radius * 1.4;
+  
+  
+  return MIN(v3, MIN(v2, v));
   
   UNUSED(v2);
   /*
@@ -193,24 +199,29 @@ void render_img2(img_map * lod_maps, int lods, float * img){
     memset(lod_maps[i].distance, 0, lod_maps[i].total_size * sizeof(float));
     memset(lod_maps[i].is_ended, 0, lod_maps[i].total_size * sizeof(bool));
   }
-  void handle_node(int lod, int x, int y){
+  int handle_node(int lod, int x, int y, float init_distance){
     img_map * map = lod_maps + lod;
     img_map * submap = lod_maps + lod + 1;
     int offset = x + y * map->size;
     vec3 d = map->dirvec[offset];
-    //logd("Handle node: %i %i %i: %i\n ", lod, x, y, offset);
+    map->distance[offset] = init_distance;
+    //logd("Handle node: %i %i %i: %i %f\n ", lod, x, y, offset, map->distance[offset]);
 
     while(true){
-      //iron_usleep(10000);      
+      iron_usleep(1000);      
       float dd = map->distance[offset];
       vec3 p = vec3_scale(d, dd);
       float d2 = distance_function(p);
-      //logd("iterate: %i %i %i: %f %f\n ", lod, x, y, dd,  d2);
+      logd("iterate: %i %i %i: %f %f\n ", lod, x, y, dd,  d2);
       float newdist = dd + d2;
       if(lod < lods - 1){
-	float r_dist = map->cell_fov * map->distance[offset] * sqrt2 * 0.25;
+	float r_dist = map->cell_fov * newdist * sqrt2;
 	if(d2 < r_dist){
-	  //logd("going down: %f\n", r_dist);
+	  // when the distance is less than the size of the cone
+	  // split the cone.
+	  float safedist = newdist / (1.0 / submap->cell_fov + 1) * sqrt2;
+	  float newdist2 = safedist;
+	  //logd("ndist: %f %f %f\n", r_dist, newdist, safedist);
 	  int s2 = submap->size;
 	  int _x = x * 2;
 	  int _y = y * 2;
@@ -219,21 +230,17 @@ void render_img2(img_map * lod_maps, int lods, float * img){
 	  int c3 = _x + (_y + 1) * s2;
 	  int c4 = c3 + 1;
 	  //logd(".. %f %f %f\n", d2, r_dist, newdist);
-	  if(!submap->is_ended[c1] && submap->distance[c1] <= (newdist - r_dist)){
-	    submap->distance[c1] = newdist - r_dist;
-	    handle_node(lod + 1,_x,_y);
+	  if(!submap->is_ended[c1] && submap->distance[c1] <= newdist2){
+	    ASSERT(c1 == handle_node(lod + 1,_x,_y, newdist2));
 	  }
-	  if(!submap->is_ended[c2] && submap->distance[c2] <= (newdist - r_dist)){
-	    submap->distance[c2] = newdist - r_dist;
-	    handle_node(lod + 1,_x + 1, _y);
+	  if(!submap->is_ended[c2] && submap->distance[c2] <= newdist2){
+	    ASSERT(c2 == handle_node(lod + 1,_x + 1, _y, newdist2));
 	  }
-	  if(!submap->is_ended[c3] && submap->distance[c3] <= (newdist - r_dist)){
-	    submap->distance[c3] = newdist - r_dist;
-	    handle_node(lod + 1, _x, _y + 1);
+	  if(!submap->is_ended[c3] && submap->distance[c3] <= newdist2){
+	    ASSERT(c3 == handle_node(lod + 1, _x, _y + 1, newdist2));
 	  }
-	  if(!submap->is_ended[c4] && submap->distance[c4] <= (newdist - r_dist)){
-	    submap->distance[c4] = newdist - r_dist;
-	    handle_node(lod + 1, _x + 1, _y + 1);
+	  if(!submap->is_ended[c4] && submap->distance[c4] <= newdist2){
+	    ASSERT(c4 == handle_node(lod + 1, _x + 1, _y + 1, newdist2));
 	  }
 	  //logd(" -- %i %i %i %i\n", submap->is_ended[c1] , submap->is_ended[c2] ,
 	  // submap->is_ended[c3] , submap->is_ended[c4]);
@@ -241,51 +248,127 @@ void render_img2(img_map * lod_maps, int lods, float * img){
 	     submap->is_ended[c3] && submap->is_ended[c4]){
 	    map->is_ended[offset] = true;
 	    map->distance[offset] = submap->distance[c1];
-	    
-	    return;
+	    //logd("Ended..\n");
+	    return offset;
 	  }else{
 
 	    int offsets[] = {c1, c2, c3, c4};
-	    float mind = 0;
+	    float mind = 100000;//map->distance[offset];
 	    for(int i = 0; i < 4; i++){
-	      //logd("Is ended: %i %f\n", submap->is_ended[offsets[i]], submap->distance[offsets[i]]); 
 	      if(submap->is_ended[offsets[i]] == false){
-		mind = MAX(submap->distance[offsets[i]], mind);
+		logd("%i %f\n", i, submap->distance[offsets[i]]);
+		mind = MIN(submap->distance[offsets[i]], mind);
 	      }
 	    }
-	    if(mind <= map->distance[offset])
-	    map->distance[offset] = mind;
-	    //ASSERT(false);
-	    continue;
+	    logd("mind: %f %f\n", mind, map->distance[offset]);
+	    ASSERT(map->distance[offset] != mind);
+	    if(mind > map->distance[offset])
+	      {
+		map->distance[offset] = MAX(map->distance[offset] * 1.1, mind);
+		logd("mind: %f %i\n", mind, offset);
+		//ASSERT(false);
+		continue;
+	      }
 	  }
 	}
       }else{
-	if(d2 < 0.0001){
+	if(d2 < 0.001){
 	  map->is_ended[offset] = true;
 	  img[offset] = 1;
+	  map->distance[offset] = newdist;
 	  //logd("Hit object\n");
-	  return;
+	  return offset;
 	}
-	/*float r_dist = submap->cell_fov * newdist * sqrt2;
-	//logd("??? ! %f %f %f\n", r_dist, d2, newdist);
+
+	float r_dist = (map->cell_fov) * newdist * sqrt2;
+	logd("%f %f\n", r_dist, d2);
 	if(r_dist * 2 < d2){ 
 	  map->distance[offset] = newdist;
-	  //logd("This happens! %f %f %f\n", r_dist, d2, newdist);
-	  return;
-	  }*/
+	  return offset;
+	}
       }
       map->distance[offset] = newdist;
-      if( map->distance[offset] > 400.0){
+      if( map->distance[offset] > 40.0){
 	map->is_ended[offset] = true;
-	//logd("Hit end\n");
-	return;
+	//logd("Hit end..\n");
+	return offset;
       }
       
       //vec3_print(p); vec3_print(d);logd(" : %f \n", d2); 
       //vec3_print(lod_maps[1].dirvec[0]); vec3_print(lod_maps[1].dirvec[1]);
     }
+    return offset;
   }
-  handle_node(0, 0, 0);
+  handle_node(0, 0, 0, 0.0);
+}
+
+void render_img3(float * img, int size, float f){
+  int size2 = size * size;
+  // distance to field
+  float * df = alloc0(size2 * sizeof(float));
+  // traveled
+  float * pd = alloc0(size2 * sizeof(float));
+  // direction
+  vec3 * dirvec = alloc0(size2 * sizeof(vec3));
+  float init_distance = distance_function(vec3mk(0,0,0));
+  for(int i = 0; i < size2; i++){
+    df[i] = init_distance;
+    pd[i] = init_distance;
+  }
+
+  float s1 = size + 1;
+  for(int y = 0; y < size; y++){
+    for(int x = 0; x < size; x++){
+      float _y = 2.0 * ((y + 1) / s1 - 0.5);
+      float _x = 2.0 * ((x + 1) / s1 - 0.5);
+      dirvec[y * size + x] = vec3_normalize(vec3mk(_x, _y, f));
+    }
+  }  
+  
+  float max_distance = 100;
+  for(int iter = 0; iter < 100; iter++){
+    logd("Iter: %i\n", iter);
+    int min_idx = -1;
+    float min = -10000;
+    for(int i = 0; i < size2; i++){
+      float v = pd[i];
+      if(i < 10){
+	logd("%i :: %f %f\n",i, v, df[i]);
+      }
+      if(v > min && v < max_distance && df[i] > 0.0001){
+	min = v;
+	min_idx = i;
+      }
+    }
+    if(min_idx == -1)
+      break;
+
+    int x = min_idx % size;
+    int y = min_idx / size;
+    vec3 p = vec3_scale(dirvec[min_idx], min);
+    vec3 p2 = vec3_scale(dirvec[min_idx + 1], min);
+    float ul = vec3_len(vec3_sub(p,p2));
+    float d = distance_function(p);
+    logd("max_idx: %i %f\n", min_idx, d);
+    int j = 0;
+    
+    for(int iy = 0; iy < size; iy++){
+      for(int ix = 0; ix < size; ix++){
+	int j2 = j++;
+	// err = uncertaintiy
+	float err = (fabs((ix - x)) + fabs((iy - y))) * ul * 2;
+	float d2 =  err + d; 
+	//float df2 = min - d2;
+	if(iy == 0 && ix == 0)
+	  logd("err: %f %f %f %f %f\n", err, d, init_distance, ul, d2);
+	if(df[j2] > d2){
+	  df[j2] = d2;
+	  pd[j2] = min - err; 
+	}
+      }
+    }
+  }
+  memcpy(img, df, size2 * sizeof(float));
 }
 
 #include <signal.h>
@@ -301,7 +384,9 @@ int main(){
   sphere_center3 = vec3mk(0.2,0.0,0.9);
   light = vec3mk(0.0,0,0);
   int lods = get_lods(512);
-  img_map * maps = create_maps(lods, 1.0);
+  img_map * maps = create_maps(lods, 3.0);
+  UNUSED(maps);
+  
   SDL_Window * window;
   SDL_Renderer * renderer;
   //vec3 p = vec3mk(0.0, 0.0, 0.0);
@@ -324,7 +409,8 @@ int main(){
     
     memset(img,0, sizeof(img));
     u64 ts = timestamp();
-    render_img2(maps, lods, (float *) img);
+    render_img3((float *) img, 512, 1.0);
+    //render_img2(maps, lods, (float *) img);
     logd("time: %f ms\n", ((float)(timestamp()- ts)) * 0.001 );
     t += 0.01;
     //light.y = sin(t);
@@ -338,9 +424,9 @@ int main(){
       for(int j = 0; j < 512; j++){
 	SDL_Rect r = {i, j, 1, 1};
 	if(img[i][j] != 0){
-	  int v = 255 * img[i][j];
+	  int v = 255 * img[i][j] * 0.05;
 	  //
-	  SDL_FillRect(s, &r, SDL_MapRGB(s->format, v/2, v/6 * 2, v / 5));
+	  SDL_FillRect(s, &r, SDL_MapRGB(s->format, v, v, v));
 	  //SDL_RenderFillRect( renderer, &r );
 	  //SDL_RenderDrawPoint(renderer, i,j);
 	  
