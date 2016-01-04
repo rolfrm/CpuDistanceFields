@@ -325,24 +325,27 @@ void render_img3(float * img, int size, float f){
     }
   }  
   
-  float max_distance = 10;
   for(int iter = 0; iter < 1000; iter++){
     //gd("Iter: %i\n", iter);
     int min_idx = -1;
-    float min = -10000;
+    /*float min = -10000;
     for(int i = 0; i < size2; i++){
       float v = pd[i];
-      /*(i < 10){
-	logd("%i :: %f %f\n",i, v, df[i]);
-	}*/
-      if(v > min && v < max_distance && df[i] > 0.0001){
-	min = v;
+      float v2 = df[i];
+      float v3 = -v / v2;
+      if(v3 > min && v < 10){
+	min = v3;
 	min_idx = i;
       }
-    }
+    }*/
+    
+    min_idx = rand() % size2;
+    while(pd[min_idx] > 10)
+      min_idx = rand() % size2;
+    //logd("minidx: %i\n", min_idx);
     if(min_idx == -1)
       break;
-
+    float min = pd[min_idx];
     vec3 p = vec3_scale(dirvec[min_idx], min);
     float d = distance_function(p);
     float d2 = d * d;
@@ -366,6 +369,20 @@ void render_img3(float * img, int size, float f){
     }
   }
   memcpy(img, pd, size2 * sizeof(float));
+  for(int i = 0; i < size2; i++)
+    img[i] *= 0.5;
+  /*for(int i = 0; i < size2; i++){
+    img[i] = 0;
+    float d = df[i];
+    if(d < 0.25)
+      img[i] = 1.0;
+    else if(d < 1.5)
+      img[i] = 0.4;
+    else if(d < 3)
+      img[i] = 0.2;
+    else if(d < 4)
+      img[i] = 0.1;	  
+      }*/
 }
 
 void render_img0(float * img, int size, float f){
@@ -383,11 +400,12 @@ void render_img0(float * img, int size, float f){
       while(dtrav < 10){
 	vec3 p = vec3_scale(dir, dtrav);
 	float f_dist = distance_function(p);
+	dtrav += f_dist;
 	if(f_dist < 0.001){
-	  img[offset] = 1.0;
+	  img[offset] = dtrav * 0.5;
 	  break;
 	}
-	dtrav += f_dist;
+	
       }
     }
   }  
@@ -402,8 +420,8 @@ void handle_sigint(int signum){
 }
 
 int main(){
-  sphere_center = vec3mk(0.0,0.2,5.0);
-  sphere_center2 = vec3mk(0.0,-0.2,5.0);
+  sphere_center = vec3mk(0.0,0.2,3.0);
+  sphere_center2 = vec3mk(0.0,-0.2,3.0);
   sphere_center3 = vec3mk(0.2,0.0,0.9);
   light = vec3mk(0.0,0,0);
   int lods = get_lods(512);
@@ -434,13 +452,13 @@ int main(){
     u64 ts = timestamp();
     //render_img3((float *) img, 512, 1.0);
     render_img0((float *) img, 512, 1.0);
-    //render_img0(maps, lods, (float *) img);
+    //ender_img0(maps, lods, (float *) img);
     logd("time: %f ms\n", ((float)(timestamp()- ts)) * 0.001 );
     t += 0.01;
     //light.y = sin(t);
     //sphere_center.y = cos(t) * 0.5;
-    sphere_center.x = cos(t * 1.3) * 4.5;
-    sphere_center2.x = cos(t * 1.1) * 4.5;
+    //sphere_center.x = cos(t * 1.3) * 4.5;
+    //sphere_center2.x = cos(t * 1.1) * 4.5;
   //return 0;
     SDL_FillRect(s, NULL, SDL_MapRGB(s->format, 0, 0, 0));
     SDL_SetRenderDrawColor( renderer, 128, 100, 64, 255 );
@@ -448,7 +466,7 @@ int main(){
       for(int j = 0; j < 512; j++){
 	SDL_Rect r = {i, j, 1, 1};
 	if(img[i][j] != 0){
-	  int v = 255 * img[i][j] * 0.05;
+	  int v = 255 * img[i][j];
 	  //
 	  SDL_FillRect(s, &r, SDL_MapRGB(s->format, v, v, v));
 	  //SDL_RenderFillRect( renderer, &r );
