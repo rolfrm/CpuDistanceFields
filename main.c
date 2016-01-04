@@ -325,8 +325,8 @@ void render_img3(float * img, int size, float f){
     }
   }  
   
-  float max_distance = 100;
-  for(int iter = 0; iter < 100; iter++){
+  float max_distance = 10;
+  for(int iter = 0; iter < 1000; iter++){
     //gd("Iter: %i\n", iter);
     int min_idx = -1;
     float min = -10000;
@@ -365,8 +365,34 @@ void render_img3(float * img, int size, float f){
       }
     }
   }
-  memcpy(img, df, size2 * sizeof(float));
+  memcpy(img, pd, size2 * sizeof(float));
 }
+
+void render_img0(float * img, int size, float f){
+  float init_distance = distance_function(vec3mk(0,0,0));
+  
+  float s1 = size + 1;
+  for(int y = 0; y < size; y++){
+    for(int x = 0; x < size; x++){
+      int offset = x + y * size;
+      float _y = 2.0 * ((y + 1) / s1 - 0.5);
+      float _x = 2.0 * ((x + 1) / s1 - 0.5);
+      vec3 dir = vec3_normalize(vec3mk(_x, _y, f));
+      float d = init_distance;
+      float dtrav = d;
+      while(dtrav < 10){
+	vec3 p = vec3_scale(dir, dtrav);
+	float f_dist = distance_function(p);
+	if(f_dist < 0.001){
+	  img[offset] = 1.0;
+	  break;
+	}
+	dtrav += f_dist;
+      }
+    }
+  }  
+}
+
 
 #include <signal.h>
 
@@ -406,8 +432,9 @@ int main(){
     
     memset(img,0, sizeof(img));
     u64 ts = timestamp();
-    render_img3((float *) img, 512, 1.0);
-    //render_img2(maps, lods, (float *) img);
+    //render_img3((float *) img, 512, 1.0);
+    render_img0((float *) img, 512, 1.0);
+    //render_img0(maps, lods, (float *) img);
     logd("time: %f ms\n", ((float)(timestamp()- ts)) * 0.001 );
     t += 0.01;
     //light.y = sin(t);
