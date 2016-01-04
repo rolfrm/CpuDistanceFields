@@ -327,14 +327,14 @@ void render_img3(float * img, int size, float f){
   
   float max_distance = 100;
   for(int iter = 0; iter < 100; iter++){
-    logd("Iter: %i\n", iter);
+    //gd("Iter: %i\n", iter);
     int min_idx = -1;
     float min = -10000;
     for(int i = 0; i < size2; i++){
       float v = pd[i];
-      if(i < 10){
+      /*(i < 10){
 	logd("%i :: %f %f\n",i, v, df[i]);
-      }
+	}*/
       if(v > min && v < max_distance && df[i] > 0.0001){
 	min = v;
 	min_idx = i;
@@ -343,28 +343,25 @@ void render_img3(float * img, int size, float f){
     if(min_idx == -1)
       break;
 
-    int x = min_idx % size;
-    int y = min_idx / size;
     vec3 p = vec3_scale(dirvec[min_idx], min);
-    vec3 p2 = vec3_scale(dirvec[min_idx + 1], min);
-    float ul = vec3_len(vec3_sub(p,p2));
     float d = distance_function(p);
-    logd("max_idx: %i %f\n", min_idx, d);
-    int j = 0;
-    
-    for(int iy = 0; iy < size; iy++){
-      for(int ix = 0; ix < size; ix++){
-	int j2 = j++;
-	// err = uncertaintiy
-	float err = (fabs((ix - x)) + fabs((iy - y))) * ul * 2;
-	float d2 =  err + d; 
-	//float df2 = min - d2;
-	if(iy == 0 && ix == 0)
-	  logd("err: %f %f %f %f %f\n", err, d, init_distance, ul, d2);
-	if(df[j2] > d2){
-	  df[j2] = d2;
-	  pd[j2] = min - err; 
+    float d2 = d * d;
+    //ogd("max_idx: %i %f\n", min_idx, d);
+    for(int j2 = 0; j2 < size2; j2++){
+    //for(int iy = 0; iy < size; iy++){
+    //  for(int ix = 0; ix < size; ix++){
+      vec3 dir = dirvec[j2];
+      float pd2 = pd[j2];
+      vec3 p2 = vec3_scale(dir, pd2);
+      float sqdist = vec3_sqlen(vec3_sub(p2, p));
+      if(sqdist < d2){
+	float dist = sqrtf(sqdist);
+	float newpd = min + d - dist;
+	if(newpd > pd[j2]){
+	  pd[j2] = newpd;
+	  df[j2] = d + dist;
 	}
+	
       }
     }
   }
